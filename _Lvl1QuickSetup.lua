@@ -1,5 +1,4 @@
 --[[
---Compatibility fixes (Deprecated)
 if C_Container.GetContainerItemInfo then
 	_G.GetContainerItemInfo = function(...)
 		local itemTable = C_Container.GetContainerItemInfo(...)
@@ -32,7 +31,6 @@ end
 
 GetAddOnMetadata = C_AddOns and C_AddOns.GetAddOnMetadata or _G.GetAddOnMetadata
 ]]
-
 local addonName,addon = ...
 local _, class = UnitClass("player");
 local _,race = UnitRace("player")
@@ -148,7 +146,7 @@ end
 
 eventHandler["ADDON_LOADED"] = function(arg1)
 	--print(arg1,RXPData)
-	if arg1 == "WeakAuras" and not _G.WeakAurasSaved then
+	if arg1 == "WeakAuras" then
 		LoadSettings('WeakAurasSaved')
 	elseif arg1 == "RXPGuides" then
 		RXPOnInitialize()
@@ -393,6 +391,61 @@ function loadKeyBinds(arg)
 		SaveBindings(2)
 	end
 end
+--/dump C_SpellBook.HasPetSpells()
+
+function EditPetRanks(editGlobal)
+if InCombatLockdown() then return end
+	local HasPetSpells = _G.HasPetSpells or C_SpellBook.HasPetSpells
+	local spells = {}
+	local rstring
+	for i = 1, HasPetSpells() do
+	   local spellType, id = GetSpellBookItemInfo(i, BOOKTYPE_PET)
+	   local spellID = bit.band(0xFFFFFF, id)
+	   -- not sure what the non-spell IDs are
+	   local spellName, spellRank, properId = GetSpellBookItemName(i, BOOKTYPE_PET)
+	   spellRank = spellRank or ""
+	   spellName = spellName or ""
+	   --local hasActionButton = C_ActionBar.HasPetActionButtons(id)
+	   --print(i, spellType, id, spellID, spellName, subtext, hasActionButton)
+	   if not rstring and spellRank:find(" %d+") then
+		rstring = string.gsub(spellRank,"%d+","%%d+")
+	   end
+	   print(spellName,spellRank)
+	   spells[spellName] = spellRank
+	end
+	
+	local i,j = GetNumMacros()
+	if i == 0 and j == 0 then return end
+	--L1QS_characterMacros[profile] = {}
+	for sname,srank in pairs(spells) do
+		if sname:find("^%S") then
+			--local globalMacro = true
+			if editGlobal then
+				for index = 1, i do
+					local name,icon,body = GetMacroInfo(index)
+					local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+					if new ~= body then 
+						print(new:len(),'----\n', new) 
+						EditMacro(index,name,nil,new)
+					end
+					--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+				end
+			end
+			--globalMacro = nil
+			for index = 1, j do
+				local name,icon,body = GetMacroInfo(index+120)
+				local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+				if new ~= body then 
+					print(index,new:len(),'----\n',new) 
+					EditMacro(index+120,nil,nil,new)
+				end
+				--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+			end
+		end
+	end
+
+end
+
 
 function saveMacros(arg)
 	local profile = class
