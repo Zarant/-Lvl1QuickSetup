@@ -1,4 +1,5 @@
---[[
+local PickupSpell = C_Spell and C_Spell.PickupSpell or _G.PickupSpell
+
 if C_Container.GetContainerItemInfo then
 	_G.GetContainerItemInfo = function(...)
 		local itemTable = C_Container.GetContainerItemInfo(...)
@@ -30,7 +31,7 @@ for i,v in pairs(C_Container) do
 end
 
 GetAddOnMetadata = C_AddOns and C_AddOns.GetAddOnMetadata or _G.GetAddOnMetadata
-]]
+
 local addonName,addon = ...
 local _, class = UnitClass("player");
 local _,race = UnitRace("player")
@@ -42,7 +43,7 @@ Frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 Frame:RegisterEvent("QUEST_ACCEPTED")
 
 addon.Frame = Frame
-
+local LoadAddOn = C_AddOns and C_AddOns.LoadAddOn or _G.LoadAddOn
 LoadAddOn("Blizzard_MacroUI")
 
 local consoleVariables = {};
@@ -79,12 +80,15 @@ function createMacros(arg)
 	local i,j = GetNumMacros()
 	if not(L1QS_characterMacros[profile]) then return end
 	for index,macro in pairs(L1QS_characterMacros[profile]) do 
-		local characterMacro = 1
+		local characterMacro = true
 		if macro[4] ~= nil then
-			characterMacro = nil
+			characterMacro = false
 		end
-		if GetMacroInfo(macro[1]) == nil and (profile ~= class or characterMacro ~= nil) then 
+		if GetMacroInfo(macro[1]) == nil then 
+			--print('ok',macro[1])
 			CreateMacro(macro[1], macro[2], macro[3], characterMacro)
+		--else
+			--print("Macro already exists:", macro[1],profile)
 		end
 	end
 end
@@ -105,7 +109,7 @@ function RXPOnInitialize(m)
 		initialized = true
 		--print(123123123)
 		for i,v in pairs(L1QS_Settings[class].RXPDB) do
-			print(i)
+			--print(i)
 			if type(v) ~= "table" then
 				db[i] = v
 			end
@@ -130,7 +134,6 @@ end
 
 eventHandler["CINEMATIC_START"] = function()
 	if UnitLevel('player') == 1 then
-		local a=true SetActionBarToggles(a,a,a,a,0) SHOW_MULTI_ACTIONBAR_1=a SHOW_MULTI_ACTIONBAR_2=a SHOW_MULTI_ACTIONBAR_3=a SHOW_MULTI_ACTIONBAR_4 = a MultiActionBar_Update()
 		createMacros()
 
 		LoadCVars()
@@ -155,12 +158,6 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 	elseif arg1 == "Peddler" and UnitLevel('player') == 1 then
 		ItemsToSell = {}
 		UnmarkedItems = {}
-    elseif arg1 == "ActionbarPlus" and ABP_PLUS_DB then
-        --local _, class = UnitClass('player')
-		local pkey = UnitName("player") .. " - " .. GetRealmName()
-		if not ABP_PLUS_DB.profileKeys[pkey] and ABP_PLUS_DB.profiles[class] then
-			ABP_PLUS_DB.profileKeys[pkey] = class
-		end
 	elseif arg1 ~= addonName then
 		return
 	end
@@ -192,8 +189,9 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 		L1QS_Settings["Guidelime"] = {}
 	end
 	if UnitLevel('player') == 1 and UnitXP("player") == 0 then
+		local a=true SetActionBarToggles(a,a,a,a,0) SHOW_MULTI_ACTIONBAR_1=a SHOW_MULTI_ACTIONBAR_2=a SHOW_MULTI_ACTIONBAR_3=a SHOW_MULTI_ACTIONBAR_4 = a MultiActionBar_Update()
 		for line in addon.config_cache:gmatch("[^\n\r]+") do
-			var,value = string.match(line,"%s*SET%s+(%a+)%s+\"(.*)\"")
+			local var,value = string.match(line,"%s*SET%s+(%a+)%s+\"(.*)\"")
 			if var and var ~= "" then
 				consoleVariables[var] = value
 			end
@@ -391,61 +389,108 @@ function loadKeyBinds(arg)
 		SaveBindings(2)
 	end
 end
---/dump C_SpellBook.HasPetSpells()
 
 function EditPetRanks(editGlobal)
+	
 if InCombatLockdown() then return end
+	
 	local HasPetSpells = _G.HasPetSpells or C_SpellBook.HasPetSpells
+	
 	local spells = {}
+	
 	local rstring
+	
 	for i = 1, HasPetSpells() do
+	
 	   local spellType, id = GetSpellBookItemInfo(i, BOOKTYPE_PET)
+	
 	   local spellID = bit.band(0xFFFFFF, id)
+	
 	   -- not sure what the non-spell IDs are
+	
 	   local spellName, spellRank, properId = GetSpellBookItemName(i, BOOKTYPE_PET)
+	
 	   spellRank = spellRank or ""
+	
 	   spellName = spellName or ""
+	
 	   --local hasActionButton = C_ActionBar.HasPetActionButtons(id)
+	
 	   --print(i, spellType, id, spellID, spellName, subtext, hasActionButton)
+	
 	   if not rstring and spellRank:find(" %d+") then
+	
 		rstring = string.gsub(spellRank,"%d+","%%d+")
+	
 	   end
+	
 	   print(spellName,spellRank)
+	
 	   spells[spellName] = spellRank
+	
 	end
 	
+
+	
 	local i,j = GetNumMacros()
+	
 	if i == 0 and j == 0 then return end
+	
 	--L1QS_characterMacros[profile] = {}
+	
 	for sname,srank in pairs(spells) do
+	
 		if sname:find("^%S") then
+	
 			--local globalMacro = true
+	
 			if editGlobal then
+	
 				for index = 1, i do
+	
 					local name,icon,body = GetMacroInfo(index)
+	
 					local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+	
 					if new ~= body then 
+	
 						print(new:len(),'----\n', new) 
+	
 						EditMacro(index,name,nil,new)
+	
 					end
+	
 					--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+	
 				end
+	
 			end
+	
 			--globalMacro = nil
+	
 			for index = 1, j do
+	
 				local name,icon,body = GetMacroInfo(index+120)
+	
 				local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+	
 				if new ~= body then 
+	
 					print(index,new:len(),'----\n',new) 
+	
 					EditMacro(index+120,nil,nil,new)
+	
 				end
+	
 				--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+	
 			end
+	
 		end
+	
 	end
-
+	
 end
-
 
 function saveMacros(arg)
 	local profile = class
@@ -472,6 +517,11 @@ function saveAll(arg)
 	saveMacros(arg)
 	saveKeyBinds(arg)
 	saveActionButtons(arg)
+	if EditModeManagerFrame then
+		local activeLayoutInfo = EditModeManagerFrame:GetActiveLayoutInfo()
+		L1QS_Settings.EditModeLayout = C_EditMode.ConvertLayoutInfoToString(activeLayoutInfo)
+		L1QS_Settings.EditModeLayoutName = activeLayoutInfo.layoutName
+	end
 	if GuidelimeDataChar then
 		L1QS_Settings["Guidelime"] = GuidelimeDataChar
 		L1QS_Settings[race]["currentGuide"] = GuidelimeDataChar["currentGuide"]
@@ -501,87 +551,32 @@ function saveAll(arg)
 end
 
 function loadAll(arg)
-createMacros(arg)
-loadKeyBinds(arg)
-loadActionButtons(arg)
-end
-
---[[
-local swFrame = CreateFrame("Frame")
-local sx,sy
-local unitToken = "player"
-
-C_Timer.After(3,function()
-hooksecurefunc("Stopwatch_Clear",function() 
-local pos = C_Map.GetPlayerMapPosition(C_Map.GetBestMapForUnit(unitToken), unitToken)
-playing = false
-sx = pos.x
-sy = pos.y
-swFrame:SetScript("OnUpdate",SWhandler)
-end)
-end)
-
-function SWhandler()
-	if StopwatchFrame:IsShown() and not Stopwatch_IsPlaying() then
-		local pos = C_Map.GetPlayerMapPosition(C_Map.GetBestMapForUnit(unitToken), unitToken)
-		if pos.x ~= sx and pos.y ~= sy then
-			Stopwatch_Play()
-			swFrame:SetScript("OnUpdate",nil)
+	createMacros(arg)
+	loadKeyBinds(arg)
+	loadActionButtons(arg)
+	if not EditModeManagerFrame then return end
+	local function SelectLayout()
+		for n,layout in pairs(EditModeManagerFrame.layoutInfo.layouts) do 
+			if layout.layoutName == L1QS_Settings.EditModeLayoutName then
+				EditModeManagerFrame:ClearSelectedSystem()
+				C_EditMode.SetActiveLayout(n)
+				EditModeManagerFrame:NotifyChatOfLayoutChange()
+				return true
+			end
 		end
-	else
-		swFrame:SetScript("OnUpdate",nil)
 	end
-end]]
 
---[[
-local HSframe = CreateFrame("Frame");
-local currentFPS = GetCVar("maxfps")
-local HSstart = 0
-function HStimer(t)
-    L1QS_Settings.HSbatch = t
-end
+	local activeLayoutInfo = EditModeManagerFrame:GetActiveLayoutInfo()
+	if L1QS_Settings.EditModeLayoutName and L1QS_Settings.EditModeLayoutName ~= activeLayoutInfo.layoutName then
+		if not SelectLayout() then
+			-- If the layout doesn't exist, import it
+			local importLayoutInfo = C_EditMode.ConvertStringToLayoutInfo(L1QS_Settings.EditModeLayout)
+			if importLayoutInfo then
+				EditModeManagerFrame:ImportLayout(importLayoutInfo, Enum.EditModeLayoutType.Account, L1QS_Settings.EditModeLayoutName);
+				SelectLayout()
+			end
+		end
 
-local function SwitchBindLocation()
-	if GetTime() - HSstart > L1QS_Settings.HSbatch then
-		ConfirmBinder()
-		HSframe:SetScript("OnUpdate",nil)
-		SetCVar("maxfps",currentFPS)
-		HSstart = 0
 	end
 end
 
-local function StartHSTimer()
-	if HSstart == 0 then
-		currentFPS = GetCVar("maxfps")
-		SetCVar("maxfps",0)
-		HSstart = GetTime()
-		HSframe:SetScript("OnUpdate",SwitchBindLocation)
-	end
-end
-
-hooksecurefunc("UseContainerItem",function(...)
-	if GetContainerItemID(...) == 6948 then
-		StartHSTimer()
-	end
-end)
-
-hooksecurefunc("UseAction",function(...)
-	local event,id = GetActionInfo(...)
-	if event == "item" and id == 6948 or event == "macro" and IsCurrentSpell(8690) then
-		StartHSTimer()
-	end
-end)
-]]
-
---[[
-function rf1()
---LoadAddOn("Blizzard_CompactRaidFrames")
-
---function sp(f,i) tr="TOPRIGHT";f2=f.debuffFrames;s=f2[1]:GetWidth();f3=f2[i];f3:SetSize(s,s);f3:ClearAllPoints();if i>6 then f3:SetPoint("BOTTOMRIGHT",f2[i-3],tr,0,0) else f3:SetPoint(tr,f2[1],tr,-(s*(i-3)),0) end end
-
---function CBF(f,i) bf=CreateFrame("Button",f:GetName().."Debuff"..i,f,"CompactDebuffTemplate");bf.baseSize=22;bf:SetSize(f.buffFrames[1]:GetSize()) end;function mv(f) for i=4,12 do sp(f,i) end end
-
---function mv3(f) CompactUnitFrame_SetMaxDebuffs(f,12); if not f.debuffFrames[4] then for i=4,12 do CBF(f,i) end end mv(f) end;hooksecurefunc("CompactUnitFrame_UpdateDebuffs",function(f) if f:GetName():match("^Compact") then mv3(f) end end);
-CRFSort_Group=function(t1, t2) if UnitIsUnit(t1,"player") then return false elseif UnitIsUnit(t2,"player") then return true else return t1 < t2 end end CompactRaidFrameContainer.flowSortFunc=CRFSort_Group
-
-end]]
