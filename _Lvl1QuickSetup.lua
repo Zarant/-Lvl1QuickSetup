@@ -38,6 +38,7 @@ local _,race = UnitRace("player")
 local Frame = CreateFrame("Frame");
 
 Frame:RegisterEvent("CINEMATIC_START")
+Frame:RegisterEvent("CINEMATIC_STOP")
 Frame:RegisterEvent("ADDON_LOADED")
 Frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 Frame:RegisterEvent("QUEST_ACCEPTED")
@@ -70,27 +71,108 @@ SaveSettings('L1QS_Bindings')
 SaveSettings('L1QS_characterMacros')
 SaveSettings('L1QS_Settings')
 SaveSettings('WeakAurasSaved')
+SaveSettings('ForeverAurasSaved')
+
+
+local needsReload = false
+
+
+StaticPopupDialogs["L1QS_LAYOUT_CHANGED"] = {
+    text = "Edit Mode Layout imported, please reload UI",
+    button1 = "Reload",
+    OnAccept = function() ReloadUI() end,
+    timeout = 0,
+    whileDead = 1,
+    hideOnEscape = 1,
+    preferredIndex = 3,
+}
+
+function LoadLayout()
+	if not EditModeManagerFrame then return end
+	print("Loading Edit Mode layout...")
+	local name = L1QS_Settings[class].EditModeLayoutName or L1QS_Settings.EditModeLayoutName
+	local layoutString = L1QS_Settings[class].EditModeLayout or L1QS_Settings.EditModeLayout
+	--print(layoutString)
+	--print(name)
+
+	local function SelectLayout()
+		local layoutInfo = C_EditMode.GetLayouts()
+		local active = layoutInfo.activeLayout
+		for n,layout in pairs(EditModeManagerFrame.layoutInfo.layouts) do 
+			if layout.layoutName == name then
+				if n == active then
+					return true
+				end
+				--EditModeManagerFrame:ClearSelectedSystem()
+				C_EditMode.SetActiveLayout(n)
+				--EditModeManagerFrame:NotifyChatOfLayoutChange()
+				return true
+			end
+		end
+	end
+
+	if name then
+		if not SelectLayout() then
+			print'438943289'
+			needsReload = true
+			EditModeManagerFrame:SetEnableAdvancedOptions(true,false)
+			-- If the layout doesn't exist, import it
+			local importLayoutInfo = C_EditMode.ConvertStringToLayoutInfo(layoutString)
+			--importLayoutInfo.interfaceStyle = 59
+			if importLayoutInfo then
+				C_Timer.After(0,SelectLayout)
+				local success = pcall(function()
+				EditModeManagerFrame:MakeNewLayout(importLayoutInfo, Enum.EditModeLayoutType.Account, name, true);
+				end)
+
+				if not success then
+					if not EditModeManagerFrame.highestLayoutIndexByType then
+						EditModeManagerFrame.highestLayoutIndexByType = {[59] = 4}
+					end
+					EditModeManagerFrame:MakeNewLayout(importLayoutInfo, Enum.EditModeLayoutType.Account, name, true);
+				end
+				C_Timer.After(1,function()
+				if StaticPopup_Show then StaticPopup_Show("L1QS_LAYOUT_CHANGED", "") end
+				end)
+				-- do	
+				-- 	local self = EditModeManagerFrame
+				-- 	self:PrepareSystemsForSave();
+				-- 	C_EditMode.SaveLayouts(self.layoutInfo);
+				-- 	self:ClearActiveChangesFlags();
+				-- 	EventRegistry:TriggerEvent("EditMode.SavedLayouts")
+				-- end
+
+			end
+		end
+
+	end
+	print("...Ok")
+end
 
 
 function createMacros(arg)
-	local profile = class
-	if arg ~= nil then
-		profile = arg
-	end
-	local i,j = GetNumMacros()
-	if not(L1QS_characterMacros[profile]) then return end
-	for index,macro in pairs(L1QS_characterMacros[profile]) do 
-		local characterMacro = true
-		if macro[4] ~= nil then
-			characterMacro = false
-		end
-		if GetMacroInfo(macro[1]) == nil then 
-			--print('ok',macro[1])
-			CreateMacro(macro[1], macro[2], macro[3], characterMacro)
-		--else
-			--print("Macro already exists:", macro[1],profile)
-		end
-	end
+
+   print("Creating Macros...")
+   local profile = class
+   if arg ~= nil then
+      profile = arg
+   end
+   local i,j = GetNumMacros()
+   if not(L1QS_characterMacros[profile]) then return end
+   for index,macro in pairs(L1QS_characterMacros[profile]) do 
+      local characterMacro = true
+
+      characterMacro = not macro[4]
+      --print(macro[1],characterMacro)
+      local n = GetMacroInfo(macro[1])
+      if not n then 
+         --print('ok',macro[1],characterMacro)
+         CreateMacro(macro[1], macro[2], macro[3], characterMacro)
+         --else
+         --print("Macro already exists:", macro[1],profile)
+      end
+   end
+   print("...Ok")
 end
 
 
@@ -126,24 +208,69 @@ end
 local eventHandler = {}
 addon.eventHandler = eventHandler
 
-function LoadCVars()
+local function LoadCVars()
+	for line in addon.config_cache:gmatch("[^\n\r]+") do
+		local var,value = string.match(line,"%s*SET%s+(%a+)%s+\"(.*)\"")
+		if var and var ~= "" then
+			consoleVariables[var] = value
+		end
+	end
+	if L1QS_Settings['cvar'] then
+		for var,value in pairs(L1QS_Settings['cvar']) do
+			consoleVariables[var] = value
+		end
+	end
 	for var,value in pairs(consoleVariables) do 
 		SetCVar(var,value)
 	end
 end
+
+local optionalCVars = {
+	"damageMeterEnabled",
+	"nameplateShowSelf",
+	"showSwingTimer",
+	"enableMovePad",
+	"movePadLocked",
+	"autointeract",
+	"raidFramesDisplayClassColor",
+	"enableMultiActionBars",
+	"raidFramesDisplayPowerBars",
+	"nameplateMaxDistance",
+
+}
+local function SaveCVars()
+	local cvars = {}
+	L1QS_Settings['cvar'] = cvars
+	for _,cvar in pairs(optionalCVars) do
+		cvars[cvar] = GetCVar(cvar)
+	end
+end
+
 
 eventHandler["CINEMATIC_START"] = function()
 	if UnitLevel('player') == 1 then
 		createMacros()
 
 		LoadCVars()
-		
-		StopCinematic()
-		CameraZoomOut(50)
-		
-		loadKeyBinds()
-		
-		loadActionButtons()
+		C_Timer.After(0.5,function() 
+			StopCinematic()
+			LoadLayout()
+			CameraZoomOut(50)
+
+			loadKeyBinds()
+
+			loadActionButtons()
+		end)
+	end
+end
+
+eventHandler["CINEMATIC_STOP"] = function()
+	if UnitLevel('player') == 1 then
+
+		C_Timer.After(0.5,function()
+			LoadLayout()
+			print("Starter profile Loaded - saved at:",L1QS_Settings.date)
+		end)
 	end
 end
 
@@ -151,6 +278,8 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 	--print(arg1,RXPData)
 	if arg1 == "WeakAuras" then
 		LoadSettings('WeakAurasSaved')
+	elseif arg1 == "ForeverAuras" then
+		LoadSettings('ForeverAurasSaved')
 	elseif arg1 == "RXPGuides" then
 		RXPOnInitialize()
 	elseif arg1 == "Scrap" and UnitLevel('player') == 1 then
@@ -189,16 +318,11 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 		L1QS_Settings["Guidelime"] = {}
 	end
 	if UnitLevel('player') == 1 and UnitXP("player") == 0 then
-		local a=true SetActionBarToggles(a,a,a,a,0) SHOW_MULTI_ACTIONBAR_1=a SHOW_MULTI_ACTIONBAR_2=a SHOW_MULTI_ACTIONBAR_3=a SHOW_MULTI_ACTIONBAR_4 = a MultiActionBar_Update()
-		for line in addon.config_cache:gmatch("[^\n\r]+") do
-			local var,value = string.match(line,"%s*SET%s+(%a+)%s+\"(.*)\"")
-			if var and var ~= "" then
-				consoleVariables[var] = value
-			end
-		end
-		
+		--local a=true SetActionBarToggles(a,a,a,a,0) SHOW_MULTI_ACTIONBAR_1=a SHOW_MULTI_ACTIONBAR_2=a SHOW_MULTI_ACTIONBAR_3=a SHOW_MULTI_ACTIONBAR_4 = a MultiActionBar_Update()
+
+
 		LoadCVars()
-					
+
 		if GuidelimeDataChar then
 			for i,v in pairs(L1QS_Settings["Guidelime"]) do
 				if type(v) == "table" then
@@ -207,7 +331,7 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 					GuidelimeDataChar[i] = v
 				end
 			end
-			
+
 			--GuidelimeDataChar = L1QS_Settings["Guidelime"]
 			if GuidelimeDataChar["guideSkip"] then
 				for i,v in pairs(GuidelimeDataChar["guideSkip"]) do
@@ -218,18 +342,19 @@ eventHandler["ADDON_LOADED"] = function(arg1)
 				GuidelimeDataChar["currentGuide"] = L1QS_Settings[race]["currentGuide"]
 			end
 		end
-		
+
 	end
 end
 
 eventHandler["PLAYER_ENTERING_WORLD"] = function()
 	--print('EWO')
+	
 	if Bug then 
 		Bug:GetParent():SetScale(0.75)
 	end
 
 	--DEFAULT_CHAT_FRAME:AddMessage("Rested Bonuses: "..tostring(GetXPExhaustion()))
-	
+
 	if UnitLevel('player') == 1 and UnitXP("player") == 0 then
 		local frames = L1QS_Settings[class].RXPframes
 		if frames then
@@ -244,6 +369,8 @@ eventHandler["PLAYER_ENTERING_WORLD"] = function()
 		end
 	end
 end
+
+
 
 Frame:SetScript("OnEvent",function(self,event,...)
 	--print('EWORLD')
@@ -292,7 +419,7 @@ faster:SetScript("OnEvent", FastLoot)]]
 
 function reportActionButtons()
 	local lActionSlot = 0;
-	for lActionSlot = 1, 120 do
+	for lActionSlot = 1, 200 do
 		local lActionText = GetActionText(lActionSlot);
 		local lActionTexture = GetActionTexture(lActionSlot);
 		if lActionTexture then
@@ -306,6 +433,8 @@ function reportActionButtons()
 end
 
 function loadActionButtons(arg)
+	
+	print("Moving Action Buttons...")
 	local profile = class
 	if arg ~= nil then
 		profile = arg
@@ -324,6 +453,7 @@ function loadActionButtons(arg)
 			end
 		end
 	end
+	print("...Ok")
 end
 
 -- /run saveActionButtons() print(L1QS_macroPlacement["HUNTER"][1])
@@ -336,7 +466,7 @@ function saveActionButtons(arg)
 	end
 	L1QS_macroPlacement[profile] = {}
 	local lActionSlot = 0;
-	for lActionSlot = 1, 120 do
+	for lActionSlot = 1, 200 do
 		local actionType,Id = GetActionInfo(lActionSlot)
 		local lActionText = GetActionText(lActionSlot);
 		local lActionTexture = GetActionTexture(lActionSlot);
@@ -367,6 +497,8 @@ function saveKeyBinds(arg)
 end
 
 function loadKeyBinds(arg)
+	
+	print("Changing keybinds...")
 	local profile = class
 	if arg ~= nil then
 		profile = arg
@@ -388,108 +520,116 @@ function loadKeyBinds(arg)
 		end
 		SaveBindings(2)
 	end
+	print("...Ok")
 end
 
 function EditPetRanks(editGlobal)
-	
-if InCombatLockdown() then return end
-	
-	local HasPetSpells = _G.HasPetSpells or C_SpellBook.HasPetSpells
-	
-	local spells = {}
-	
-	local rstring
-	
-	for i = 1, HasPetSpells() do
-	
-	   local spellType, id = GetSpellBookItemInfo(i, BOOKTYPE_PET)
-	
-	   local spellID = bit.band(0xFFFFFF, id)
-	
-	   -- not sure what the non-spell IDs are
-	
-	   local spellName, spellRank, properId = GetSpellBookItemName(i, BOOKTYPE_PET)
-	
-	   spellRank = spellRank or ""
-	
-	   spellName = spellName or ""
-	
-	   --local hasActionButton = C_ActionBar.HasPetActionButtons(id)
-	
-	   --print(i, spellType, id, spellID, spellName, subtext, hasActionButton)
-	
-	   if not rstring and spellRank:find(" %d+") then
-	
-		rstring = string.gsub(spellRank,"%d+","%%d+")
-	
-	   end
-	
-	   print(spellName,spellRank)
-	
-	   spells[spellName] = spellRank
-	
-	end
-	
 
-	
-	local i,j = GetNumMacros()
-	
-	if i == 0 and j == 0 then return end
-	
-	--L1QS_characterMacros[profile] = {}
-	
-	for sname,srank in pairs(spells) do
-	
-		if sname:find("^%S") then
-	
-			--local globalMacro = true
-	
-			if editGlobal then
-	
-				for index = 1, i do
-	
-					local name,icon,body = GetMacroInfo(index)
-	
-					local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
-	
-					if new ~= body then 
-	
-						print(new:len(),'----\n', new) 
-	
-						EditMacro(index,name,nil,new)
-	
-					end
-	
-					--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
-	
-				end
-	
-			end
-	
-			--globalMacro = nil
-	
-			for index = 1, j do
-	
-				local name,icon,body = GetMacroInfo(index+120)
-	
-				local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
-	
-				if new ~= body then 
-	
-					print(index,new:len(),'----\n',new) 
-	
-					EditMacro(index+120,nil,nil,new)
-	
-				end
-	
-				--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
-	
-			end
-	
+if InCombatLockdown() then return end
+
+	local HasPetSpells = _G.HasPetSpells or C_SpellBook.HasPetSpells
+	local GetSpellBookItemInfo = GetSpellBookItemInfo or C_SpellBook.GetSpellBookItemInfo
+	local GetSpellBookItemName = GetSpellBookItemName or C_SpellBook.GetSpellBookItemName
+	local BOOKTYPE_PET = _G.BOOKTYPE_PET or Enum.SpellBookSpellBank.Pet
+
+	local spells = {}
+
+	local rstring
+
+	for i = 1, HasPetSpells() do
+
+	   local spellType, id = GetSpellBookItemInfo(i, BOOKTYPE_PET)
+		if not id then
+			id = spellType.spellID
 		end
-	
+
+
+	   -- not sure what the non-spell IDs are
+		if id then
+	   		local spellID = bit.band(0xFFFFFF, id)
+			local spellName, spellRank, properId = GetSpellBookItemName(i, BOOKTYPE_PET)
+
+			spellRank = spellRank or ""
+
+			spellName = spellName or ""
+
+			--local hasActionButton = C_ActionBar.HasPetActionButtons(id)
+
+			--print(i, spellType, id, spellID, spellName, subtext, hasActionButton)
+
+			if not rstring and spellRank:find(" %d+") then
+
+			rstring = string.gsub(spellRank,"%d+","%%d+")
+
+			end
+
+			print(spellName,spellRank)
+
+			spells[spellName] = spellRank
+	   end
+
 	end
-	
+
+
+
+	local i,j = GetNumMacros()
+
+	if i == 0 and j == 0 or not next(spells) then return end
+
+	--L1QS_characterMacros[profile] = {}
+
+	for sname,srank in pairs(spells) do
+
+		if sname:find("^%S") then
+
+			--local globalMacro = true
+
+			if editGlobal then
+
+				for index = 1, i do
+
+					local name,icon,body = GetMacroInfo(index)
+
+					local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+
+					if new ~= body then 
+
+						print(new:len(),'----\n', new) 
+
+						EditMacro(index,name,nil,new)
+
+					end
+
+					--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+
+				end
+
+			end
+
+			--globalMacro = nil
+
+			for index = 1, j do
+
+				local name,icon,body = GetMacroInfo(index+120)
+
+				local new = body:gsub("(/%w+%s+.-" .. sname .. "%()" .. rstring,"%1"..srank)
+
+				if new ~= body then 
+
+					print(index,new:len(),'----\n',new) 
+
+					EditMacro(index+120,nil,nil,new)
+
+				end
+
+				--L1QS_characterMacros[profile][index] = {name,icon,body,globalMacro}
+
+			end
+
+		end
+
+	end
+
 end
 
 function saveMacros(arg)
@@ -497,7 +637,7 @@ function saveMacros(arg)
 	if arg ~= nil then
 		profile = arg
 	end
-	
+
 	local i,j = GetNumMacros()
 	if i == 0 and j == 0 then return end
 	L1QS_characterMacros[profile] = {}
@@ -515,12 +655,18 @@ end
 
 function saveAll(arg)
 	saveMacros(arg)
+	print("Macros saved")
 	saveKeyBinds(arg)
+	print("Keybinds saved")
 	saveActionButtons(arg)
+	print("Action buttons saved")
+	SaveCVars()
+	print("Console Variables saved")
+
 	if EditModeManagerFrame then
 		local activeLayoutInfo = EditModeManagerFrame:GetActiveLayoutInfo()
-		L1QS_Settings.EditModeLayout = C_EditMode.ConvertLayoutInfoToString(activeLayoutInfo)
-		L1QS_Settings.EditModeLayoutName = activeLayoutInfo.layoutName
+		L1QS_Settings[class].EditModeLayout = C_EditMode.ConvertLayoutInfoToString(activeLayoutInfo)
+		L1QS_Settings[class].EditModeLayoutName = activeLayoutInfo.layoutName
 	end
 	if GuidelimeDataChar then
 		L1QS_Settings["Guidelime"] = GuidelimeDataChar
@@ -548,35 +694,19 @@ function saveAll(arg)
 			end
 		end
 	end
+	print("Edit Mode Layout saved")
+	local d = date()
+	L1QS_Settings.date = d
+	print("Profile saved at:",d)
 end
 
 function loadAll(arg)
-	createMacros(arg)
+	C_Timer.After(0,function()
+		LoadLayout()
+	end)
 	loadKeyBinds(arg)
+	createMacros(arg)
 	loadActionButtons(arg)
-	if not EditModeManagerFrame then return end
-	local function SelectLayout()
-		for n,layout in pairs(EditModeManagerFrame.layoutInfo.layouts) do 
-			if layout.layoutName == L1QS_Settings.EditModeLayoutName then
-				EditModeManagerFrame:ClearSelectedSystem()
-				C_EditMode.SetActiveLayout(n)
-				EditModeManagerFrame:NotifyChatOfLayoutChange()
-				return true
-			end
-		end
-	end
+	LoadCVars()
 
-	local activeLayoutInfo = EditModeManagerFrame:GetActiveLayoutInfo()
-	if L1QS_Settings.EditModeLayoutName and L1QS_Settings.EditModeLayoutName ~= activeLayoutInfo.layoutName then
-		if not SelectLayout() then
-			-- If the layout doesn't exist, import it
-			local importLayoutInfo = C_EditMode.ConvertStringToLayoutInfo(L1QS_Settings.EditModeLayout)
-			if importLayoutInfo then
-				EditModeManagerFrame:ImportLayout(importLayoutInfo, Enum.EditModeLayoutType.Account, L1QS_Settings.EditModeLayoutName);
-				SelectLayout()
-			end
-		end
-
-	end
 end
-
